@@ -285,7 +285,7 @@ app.post('/api/verify', async (req, res) => {
   
   // Wyślij log na Discorda przez webhook
   try {
-    await axios.post('https://discord.com/api/webhooks/1475919989088452760/VIaoVDZ49RyACq9_A_wzWx6vGo6IVdKWaSaTlsQed8c_qEr4OZe6YnDzFZIGYVN5nT6r', {
+    await axios.post('https://discord.com/api/webhooks/1482626978367537205/VC5fSNon0vk09yTW1vjnWHTw1-D1S5kaC9YmYeswvZaiT5BRCv42T01NLWqN_kQWNS1z', {
       embeds: [{
         title: '✅ Nowa weryfikacja',
         color: 0x00ff00,
