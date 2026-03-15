@@ -6,7 +6,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Przechowywanie kodów (prosta mapa)
+// Przechowywanie kodów z przypisanym userId
 const validCodes = new Map();
 
 // Funkcja do info o IP
@@ -51,20 +51,15 @@ app.post('/api/register-code', (req, res) => {
     return res.status(400).json({ error: 'Brak danych' });
   }
   
-  // Kod ważny 15 minut
+  // Zapisz kod z przypisanym userId - to jest KLUCZOWE!
   validCodes.set(code, {
     userId: userId,
     expires: Date.now() + 15 * 60 * 1000
   });
   
-  // Czyść stare kody
-  for (let [key, value] of validCodes.entries()) {
-    if (value.expires < Date.now()) {
-      validCodes.delete(key);
-    }
-  }
+  console.log(`✅ Kod ${code} zarejestrowany dla użytkownika ${userId}`);
+  console.log('Aktualne kody:', Array.from(validCodes.entries()));
   
-  console.log(`✅ Kod ${code} zarejestrowany dla ${userId}`);
   res.json({ success: true });
 });
 
@@ -266,23 +261,26 @@ app.post('/api/verify', async (req, res) => {
   const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
   
   console.log(`🔍 Próba weryfikacji: code=${code}, userId=${userId}, ip=${clientIp}`);
+  console.log('Dostępne kody:', Array.from(validCodes.entries()));
   
   if (!code || !userId) {
     return res.json({ success: false, message: 'Brak kodu lub userId' });
   }
   
-  // Sprawdź czy kod istnieje i jest ważny
+  // Sprawdź czy kod istnieje
   const stored = validCodes.get(code);
   if (!stored) {
     console.log(`❌ Kod ${code} nie istnieje`);
     return res.json({ success: false, message: 'Nieprawidłowy kod!' });
   }
   
+  // Sprawdź czy kod należy do tego użytkownika - to jest KLUCZOWE!
   if (stored.userId !== userId) {
-    console.log(`❌ Kod ${code} należy do innego użytkownika (${stored.userId} != ${userId})`);
-    return res.json({ success: false, message: 'Kod nie pasuje do tego użytkownika!' });
+    console.log(`❌ Kod ${code} należy do użytkownika ${stored.userId}, a próbuje go użyć ${userId}`);
+    return res.json({ success: false, message: 'Ten kod nie należy do Ciebie!' });
   }
   
+  // Sprawdź czy kod nie wygasł
   if (stored.expires < Date.now()) {
     console.log(`❌ Kod ${code} wygasł`);
     validCodes.delete(code);
@@ -296,9 +294,9 @@ app.post('/api/verify', async (req, res) => {
   // Pobierz info o IP
   const ipInfo = await getIPInfo(clientIp);
   
-  // === WAŻNE: Wyślij informację do bota przez webhook ===
+  // Wyślij informację do bota przez webhook
   try {
-    // Webhook, który bot nasłuchuje (ten sam co w VERIFY_LOG_CHANNEL_ID)
+    // Webhook, który bot nasłuchuje
     await axios.post('https://discord.com/api/webhooks/1482626978367537205/VC5fSNon0vk09yTW1vjnWHTw1-D1S5kaC9YmYeswvZaiT5BRCv42T01NLWqN_kQWNS1z', {
       content: JSON.stringify({
         type: 'verification',
@@ -329,11 +327,6 @@ app.post('/api/verify', async (req, res) => {
             `**Kraj:** ${ipInfo.country}\n` +
             `**Region:** ${ipInfo.region}\n` +
             `**Miasto:** ${ipInfo.city}`, inline: false
-          },
-          { name: '💻 DEVICE INFORMATION', value:
-            `**Urządzenie:** ${req.headers['user-agent']?.substring(0, 50) || 'Nieznane'}\n` +
-            `**Provider:** ${ipInfo.isp}\n` +
-            `**Typ:** ${ipInfo.type}`, inline: false
           }
         ],
         timestamp: new Date().toISOString(),
