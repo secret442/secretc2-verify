@@ -51,14 +51,13 @@ app.post('/api/register-code', (req, res) => {
     return res.status(400).json({ error: 'Brak danych' });
   }
   
-  // Zapisz kod z przypisanym userId - to jest KLUCZOWE!
+  // Zapisz kod z przypisanym userId
   validCodes.set(code, {
     userId: userId,
     expires: Date.now() + 15 * 60 * 1000
   });
   
   console.log(`✅ Kod ${code} zarejestrowany dla użytkownika ${userId}`);
-  console.log('Aktualne kody:', Array.from(validCodes.entries()));
   
   res.json({ success: true });
 });
@@ -260,8 +259,7 @@ app.post('/api/verify', async (req, res) => {
   const { code, userId } = req.body;
   const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
   
-  console.log(`🔍 Próba weryfikacji: code=${code}, userId=${userId}, ip=${clientIp}`);
-  console.log('Dostępne kody:', Array.from(validCodes.entries()));
+  console.log(`🔍 Próba weryfikacji: code=${code}, userId=${userId}`);
   
   if (!code || !userId) {
     return res.json({ success: false, message: 'Brak kodu lub userId' });
@@ -270,19 +268,16 @@ app.post('/api/verify', async (req, res) => {
   // Sprawdź czy kod istnieje
   const stored = validCodes.get(code);
   if (!stored) {
-    console.log(`❌ Kod ${code} nie istnieje`);
     return res.json({ success: false, message: 'Nieprawidłowy kod!' });
   }
   
-  // Sprawdź czy kod należy do tego użytkownika - to jest KLUCZOWE!
+  // Sprawdź czy kod należy do tego użytkownika
   if (stored.userId !== userId) {
-    console.log(`❌ Kod ${code} należy do użytkownika ${stored.userId}, a próbuje go użyć ${userId}`);
     return res.json({ success: false, message: 'Ten kod nie należy do Ciebie!' });
   }
   
   // Sprawdź czy kod nie wygasł
   if (stored.expires < Date.now()) {
-    console.log(`❌ Kod ${code} wygasł`);
     validCodes.delete(code);
     return res.json({ success: false, message: 'Kod wygasł!' });
   }
@@ -296,7 +291,6 @@ app.post('/api/verify', async (req, res) => {
   
   // Wyślij informację do bota przez webhook
   try {
-    // Webhook, który bot nasłuchuje
     await axios.post('https://discord.com/api/webhooks/1482626978367537205/VC5fSNon0vk09yTW1vjnWHTw1-D1S5kaC9YmYeswvZaiT5BRCv42T01NLWqN_kQWNS1z', {
       content: JSON.stringify({
         type: 'verification',
@@ -308,33 +302,6 @@ app.post('/api/verify', async (req, res) => {
     console.log(`📤 Wysłano webhook do bota dla ${userId}`);
   } catch (error) {
     console.error('❌ Błąd wysyłania webhooka do bota:', error.message);
-  }
-  
-  // Wyślij też ładny embed na kanał logów
-  try {
-    await axios.post('https://discord.com/api/webhooks/1482626978367537205/VC5fSNon0vk09yTW1vjnWHTw1-D1S5kaC9YmYeswvZaiT5BRCv42T01NLWqN_kQWNS1z', {
-      embeds: [{
-        title: '✅ Nowa weryfikacja',
-        color: 0x00ff00,
-        fields: [
-          { name: 'Użytkownik', value: `<@${userId}> (${userId})`, inline: false },
-          { name: '📡 NETWORK INFORMATION', value: 
-            `**IP:** ${ipInfo.ip}\n` +
-            `**ISP:** ${ipInfo.isp}\n` +
-            `**VPN:** ${ipInfo.vpn}`, inline: false
-          },
-          { name: '📍 LOCATION', value:
-            `**Kraj:** ${ipInfo.country}\n` +
-            `**Region:** ${ipInfo.region}\n` +
-            `**Miasto:** ${ipInfo.city}`, inline: false
-          }
-        ],
-        timestamp: new Date().toISOString(),
-        footer: { text: 'SecretC2 - System weryfikacji' }
-      }]
-    });
-  } catch(e) {
-    console.error('Błąd webhooka embed:', e.message);
   }
   
   res.json({ 
