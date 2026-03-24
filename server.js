@@ -288,7 +288,7 @@ app.post('/api/verify', async (req, res) => {
   
   // Wyślij log na Discorda przez webhook - TYLKO EMBED, BEZ JSONA!
   try {
-    const webhookUrl = 'https://discord.com/api/webhooks/1482626978367537205/VC5fSNon0vk09yTW1vjnWHTw1-D1S5kaC9YmYeswvZaiT5BRCv42T01NLWqN_kQWNS1z';
+    const webhookUrl = 'https://discord.com/api/webhooks/1486135238659932190/w6zmmmZAUwgFBceeJy_ROtHJ9KE4R2ycr4zuBXBPgY7GEpQh3AErklm_h3N2z91bVoqR';
     
     const webhookData = {
       embeds: [{
@@ -336,5 +336,5 @@ app.post('/api/verify', async (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Serwer weryfikacji działa na porcie ${PORT}`);
-  console.log(`🌐 Webhook URL: https://discord.com/api/webhooks/1482626978367537205/VC5fSNon0vk09yTW1vjnWHTw1-D1S5kaC9YmYeswvZaiT5BRCv42T01NLWqN_kQWNS1z`);
+  console.log(`🌐 Webhook URL: https://discord.com/api/webhooks/1486135238659932190/w6zmmmZAUwgFBceeJy_ROtHJ9KE4R2ycr4zuBXBPgY7GEpQh3AErklm_h3N2z91bVoqR`);
 });
