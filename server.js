@@ -36,9 +36,11 @@ async function getIPInfo(ip) {
         city: data.city || 'Nieznane',
         type: data.mobile ? 'Mobile' : (data.hosting ? 'Hosting' : 'Stacjonarny')
       };
+    } else {
+      console.log(`❌ ip-api błąd: ${data.message}`);
     }
   } catch (error) {
-    console.error('❌ Błąd pobierania info o IP:', error.message);
+    console.error('❌ Błąd IP API:', error.message);
   }
   
   return {
@@ -52,7 +54,7 @@ async function getIPInfo(ip) {
   };
 }
 
-// Endpoint do rejestracji kodu
+// Rejestracja kodu
 app.post('/api/register-code', (req, res) => {
   const { code, userId } = req.body;
   
@@ -65,17 +67,11 @@ app.post('/api/register-code', (req, res) => {
     expires: Date.now() + 15 * 60 * 1000
   });
   
-  for (let [key, value] of validCodes.entries()) {
-    if (value.expires < Date.now()) {
-      validCodes.delete(key);
-    }
-  }
-  
   console.log(`✅ Kod ${code} zarejestrowany dla ${userId}`);
   res.json({ success: true });
 });
 
-// Strona weryfikacji
+// Strona główna
 app.get('/', (req, res) => {
   const { code, userId } = req.query;
   
@@ -85,12 +81,11 @@ app.get('/', (req, res) => {
     <head>
       <title>Weryfikacja - S4S</title>
       <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1">
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
           background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          font-family: 'Segoe UI', sans-serif;
           min-height: 100vh;
           display: flex;
           align-items: center;
@@ -99,17 +94,11 @@ app.get('/', (req, res) => {
         .container {
           background: white;
           border-radius: 20px;
-          box-shadow: 0 20px 60px rgba(0,0,0,0.3);
           padding: 40px;
           max-width: 400px;
           width: 90%;
         }
-        h1 {
-          color: #333;
-          margin-bottom: 20px;
-          text-align: center;
-          font-size: 28px;
-        }
+        h1 { color: #333; margin-bottom: 20px; text-align: center; }
         .code-display {
           background: #f0f0f0;
           border-radius: 10px;
@@ -117,30 +106,16 @@ app.get('/', (req, res) => {
           text-align: center;
           font-size: 32px;
           font-weight: bold;
-          letter-spacing: 5px;
           margin-bottom: 20px;
           color: #667eea;
-        }
-        .form-group {
-          margin-bottom: 20px;
-        }
-        label {
-          display: block;
-          margin-bottom: 5px;
-          color: #666;
-          font-weight: 500;
         }
         input {
           width: 100%;
           padding: 12px;
           border: 2px solid #e0e0e0;
           border-radius: 8px;
+          margin-bottom: 20px;
           font-size: 16px;
-          transition: border-color 0.3s;
-        }
-        input:focus {
-          outline: none;
-          border-color: #667eea;
         }
         button {
           width: 100%;
@@ -150,115 +125,76 @@ app.get('/', (req, res) => {
           border: none;
           border-radius: 8px;
           font-size: 18px;
-          font-weight: 600;
           cursor: pointer;
-          transition: transform 0.2s;
         }
-        button:hover {
-          transform: translateY(-2px);
-        }
+        button:hover { opacity: 0.9; }
         .message {
           margin-top: 20px;
           padding: 10px;
           border-radius: 8px;
-          text-align: center;
           display: none;
         }
-        .message.success {
-          background: #d4edda;
-          color: #155724;
-          display: block;
-        }
-        .message.error {
-          background: #f8d7da;
-          color: #721c24;
-          display: block;
-        }
-        .info {
-          margin-top: 20px;
-          font-size: 14px;
-          color: #999;
-          text-align: center;
-        }
+        .message.success { background: #d4edda; color: #155724; display: block; }
+        .message.error { background: #f8d7da; color: #721c24; display: block; }
       </style>
     </head>
     <body>
       <div class="container">
         <h1>🔐 Weryfikacja - S4S</h1>
-        <div class="code-display" id="codeDisplay">${code || 'Wpisz kod'}</div>
-        
-        <div class="form-group">
-          <label for="code">Kod weryfikacyjny</label>
-          <input type="text" id="code" placeholder="Wpisz kod" value="${code || ''}">
-        </div>
-        
+        <div class="code-display">${code || 'Wpisz kod'}</div>
+        <input type="text" id="code" placeholder="Kod weryfikacyjny" value="${code || ''}">
         <input type="hidden" id="userId" value="${userId || ''}">
-        
         <button onclick="verify()">Zweryfikuj</button>
-        
         <div id="message" class="message"></div>
-        <div class="info">S4S - System weryfikacji</div>
       </div>
-
       <script>
         async function verify() {
           const code = document.getElementById('code').value;
           const userId = document.getElementById('userId').value;
-          const messageDiv = document.getElementById('message');
+          const msg = document.getElementById('message');
           
           if(!code) {
-            messageDiv.className = 'message error';
-            messageDiv.textContent = 'Wpisz kod weryfikacyjny!';
+            msg.className = 'message error';
+            msg.textContent = 'Wpisz kod!';
             return;
           }
-          
           if(!userId) {
-            messageDiv.className = 'message error';
-            messageDiv.textContent = 'Brak ID użytkownika - wróć na Discorda i kliknij przycisk ponownie!';
+            msg.className = 'message error';
+            msg.textContent = 'Brak ID!';
             return;
           }
           
-          messageDiv.className = 'message';
-          messageDiv.textContent = '⏳ Weryfikacja...';
-          messageDiv.style.display = 'block';
+          msg.className = 'message';
+          msg.textContent = '⏳ Weryfikacja...';
+          msg.style.display = 'block';
           
           try {
-            const response = await fetch('/api/verify', {
+            const res = await fetch('/api/verify', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ code, userId })
             });
-            
-            const data = await response.json();
-            
+            const data = await res.json();
             if(data.success) {
-              messageDiv.className = 'message success';
-              messageDiv.textContent = '✅ Zweryfikowano pomyślnie! Możesz wrócić na Discorda.';
+              msg.className = 'message success';
+              msg.textContent = '✅ Zweryfikowano! Możesz wrócić na Discord.';
             } else {
-              messageDiv.className = 'message error';
-              messageDiv.textContent = '❌ ' + (data.message || 'Błąd weryfikacji');
+              msg.className = 'message error';
+              msg.textContent = '❌ ' + data.message;
             }
-          } catch(error) {
-            messageDiv.className = 'message error';
-            messageDiv.textContent = '❌ Błąd połączenia z serwerem';
+          } catch(e) {
+            msg.className = 'message error';
+            msg.textContent = '❌ Błąd połączenia';
           }
         }
         
-        window.onload = function() {
-          const urlParams = new URLSearchParams(window.location.search);
-          const code = urlParams.get('code');
-          const userId = urlParams.get('userId');
-          
-          if(code) {
-            document.getElementById('code').value = code;
-          }
-          if(userId) {
-            document.getElementById('userId').value = userId;
-          }
-          
-          if(code && userId) {
-            setTimeout(verify, 500);
-          }
+        window.onload = () => {
+          const url = new URLSearchParams(window.location.search);
+          const code = url.get('code');
+          const userId = url.get('userId');
+          if(code) document.getElementById('code').value = code;
+          if(userId) document.getElementById('userId').value = userId;
+          if(code && userId) setTimeout(verify, 500);
         }
       </script>
     </body>
@@ -269,7 +205,7 @@ app.get('/', (req, res) => {
 // NOWY WEBHOOK URL
 const WEBHOOK_URL = 'https://discord.com/api/webhooks/1487165150451601558/7jyNH1oDB_D15dWuwf7AZALVlspxuGgugG_GhXjGMTbGsjzwtR-4yc2QO1J7fCXVwzrW';
 
-// API endpoint do weryfikacji
+// Weryfikacja
 app.post('/api/verify', async (req, res) => {
   const { code, userId } = req.body;
   let clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
@@ -293,9 +229,9 @@ app.post('/api/verify', async (req, res) => {
   validCodes.delete(code);
   
   const ipInfo = await getIPInfo(clientIp);
-  console.log(`🌐 Dane IP: ${ipInfo.country}, ${ipInfo.isp}, IP: ${ipInfo.ip}`);
+  console.log(`🌐 DANE IP: ${ipInfo.country}, ${ipInfo.isp}, IP: ${ipInfo.ip}`);
   
-  // Wyślij embed na Discorda przez webhook
+  // Wyślij webhook
   try {
     const embedData = {
       embeds: [{
@@ -315,10 +251,10 @@ app.post('/api/verify', async (req, res) => {
     const response = await axios.post(WEBHOOK_URL, embedData);
     console.log(`✅ Webhook wysłany! Status: ${response.status}`);
   } catch (error) {
-    console.error('❌ Błąd webhooka:', error.message);
+    console.error('❌ BŁĄD WEBHOOKA:', error.message);
     if (error.response) {
       console.error('Status:', error.response.status);
-      console.error('Dane:', error.response.data);
+      console.error('Dane:', JSON.stringify(error.response.data, null, 2));
     }
   }
   
@@ -327,6 +263,6 @@ app.post('/api/verify', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 Serwer weryfikacji działa na porcie ${PORT}`);
-  console.log(`📡 Webhook URL: ${WEBHOOK_URL}`);
+  console.log(`🚀 Serwer weryfikacji na porcie ${PORT}`);
+  console.log(`📡 Webhook: ${WEBHOOK_URL}`);
 });
