@@ -9,7 +9,7 @@ app.use(express.json());
 // Przechowywanie kodów
 const validCodes = new Map();
 
-// Funkcja do info o IP
+// Funkcja do info o IP - POPRAWIONA!
 async function getIPInfo(ip) {
   try {
     let cleanIp = ip;
@@ -292,7 +292,7 @@ app.post('/api/verify', async (req, res) => {
   const ipInfo = await getIPInfo(clientIp);
   console.log(`🌐 Dane IP: ${ipInfo.country}, ${ipInfo.isp}, IP: ${ipInfo.ip}`);
   
-  // WEBHOOK
+  // WEBHOOK - SPRAWDŹ CZY TEN URL JEST POPRAWNY
   const webhookUrl = 'https://discord.com/api/webhooks/1487149461628129331/Dr94e7Z8LgFU6pySfDtHcg9c5Uug7WY07B9fi9dqbsAEXRe20n6RSvXdaKCch3HGnGs2';
   
   try {
