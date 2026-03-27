@@ -6,44 +6,53 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Przechowywanie kodów (prosta mapa)
+// Przechowywanie kodów
 const validCodes = new Map();
 
 // Funkcja do info o IP
 async function getIPInfo(ip) {
   try {
-    if (ip === '::1' || ip === '127.0.0.1') ip = '8.8.8.8';
+    let cleanIp = ip;
+    if (ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1') {
+      cleanIp = '8.8.8.8';
+    }
     
-    const response = await axios.get(`http://ip-api.com/json/${ip}?fields=66846719`);
+    if (cleanIp && cleanIp.includes('::ffff:')) {
+      cleanIp = cleanIp.split('::ffff:')[1];
+    }
+    
+    console.log(`🌐 Pobieranie danych dla IP: ${cleanIp}`);
+    
+    const response = await axios.get(`http://ip-api.com/json/${cleanIp}?fields=66846719`);
     const data = response.data;
     
     if (data.status === 'success') {
       return {
-        ip: data.query,
-        isp: data.isp || 'Nieznane',
-        vpn: data.proxy || data.hosting ? 'Tak' : 'Nie',
-        country: data.country || 'Nieznane',
-        region: data.regionName || 'Nieznane',
+        ip: data.query || cleanIp,
+        isp: data.isp || 'Nieznany ISP',
+        vpn: (data.proxy || data.hosting) ? 'Tak' : 'Nie',
+        country: data.country || 'Nieznany',
+        region: data.regionName || 'Nieznany',
         city: data.city || 'Nieznane',
-        type: data.mobile ? 'Mobile' : (data.hosting ? 'Hosting' : 'Biznes/Dom')
+        type: data.mobile ? 'Mobile' : (data.hosting ? 'Hosting' : 'Stacjonarny')
       };
     }
   } catch (error) {
-    console.error('Błąd pobierania info o IP:', error.message);
+    console.error('❌ Błąd pobierania info o IP:', error.message);
   }
   
   return {
-    ip: ip,
-    isp: 'Nieznane',
+    ip: ip || 'Nieznane',
+    isp: 'Nieznany ISP',
     vpn: 'Nieznane',
-    country: 'Nieznane',
-    region: 'Nieznane',
+    country: 'Nieznany',
+    region: 'Nieznany',
     city: 'Nieznane',
-    type: 'Nieznane'
+    type: 'Nieznany'
   };
 }
 
-// Endpoint do rejestracji kodu (wywoływany przez bota)
+// Endpoint do rejestracji kodu
 app.post('/api/register-code', (req, res) => {
   const { code, userId } = req.body;
   
@@ -51,24 +60,22 @@ app.post('/api/register-code', (req, res) => {
     return res.status(400).json({ error: 'Brak danych' });
   }
   
-  // Kod ważny 15 minut
   validCodes.set(code, {
     userId: userId,
     expires: Date.now() + 15 * 60 * 1000
   });
   
-  // Czyść stare kody
   for (let [key, value] of validCodes.entries()) {
     if (value.expires < Date.now()) {
       validCodes.delete(key);
     }
   }
   
-  console.log(`📝 Kod ${code} zarejestrowany dla ${userId}`);
+  console.log(`✅ Kod ${code} zarejestrowany dla ${userId}`);
   res.json({ success: true });
 });
 
-// Strona weryfikacji - TYLKO KOD, ID Z LINKU
+// Strona weryfikacji
 app.get('/', (req, res) => {
   const { code, userId } = req.query;
   
@@ -76,7 +83,7 @@ app.get('/', (req, res) => {
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Weryfikacja - SecretC2</title>
+      <title>Weryfikacja - S4S</title>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1">
       <style>
@@ -173,14 +180,11 @@ app.get('/', (req, res) => {
           color: #999;
           text-align: center;
         }
-        .hidden {
-          display: none;
-        }
       </style>
     </head>
     <body>
       <div class="container">
-        <h1>🔐 Weryfikacja - SecretC2</h1>
+        <h1>🔐 Weryfikacja - S4S</h1>
         <div class="code-display" id="codeDisplay">${code || 'Wpisz kod'}</div>
         
         <div class="form-group">
@@ -188,13 +192,12 @@ app.get('/', (req, res) => {
           <input type="text" id="code" placeholder="Wpisz kod" value="${code || ''}">
         </div>
         
-        <!-- Ukryte pole z ID użytkownika -->
         <input type="hidden" id="userId" value="${userId || ''}">
         
         <button onclick="verify()">Zweryfikuj</button>
         
         <div id="message" class="message"></div>
-        <div class="info">SecretC2 - System weryfikacji</div>
+        <div class="info">S4S - System weryfikacji</div>
       </div>
 
       <script>
@@ -214,6 +217,10 @@ app.get('/', (req, res) => {
             messageDiv.textContent = 'Brak ID użytkownika - wróć na Discorda i kliknij przycisk ponownie!';
             return;
           }
+          
+          messageDiv.className = 'message';
+          messageDiv.textContent = '⏳ Weryfikacja...';
+          messageDiv.style.display = 'block';
           
           try {
             const response = await fetch('/api/verify', {
@@ -249,9 +256,8 @@ app.get('/', (req, res) => {
             document.getElementById('userId').value = userId;
           }
           
-          // Auto-weryfikacja jeśli mamy i kod i userId
           if(code && userId) {
-            verify();
+            setTimeout(verify, 500);
           }
         }
       </script>
@@ -263,78 +269,62 @@ app.get('/', (req, res) => {
 // API endpoint do weryfikacji
 app.post('/api/verify', async (req, res) => {
   const { code, userId } = req.body;
-  const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  let clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
   
-  console.log(`🔍 Próba weryfikacji: kod=${code}, userId=${userId}, ip=${clientIp}`);
+  if (clientIp && clientIp.includes(',')) {
+    clientIp = clientIp.split(',')[0].trim();
+  }
+  
+  console.log(`🔍 Weryfikacja: code=${code}, userId=${userId}, IP=${clientIp}`);
   
   if (!code || !userId) {
-    console.log('❌ Brak kodu lub userId');
     return res.json({ success: false, message: 'Brak kodu lub userId' });
   }
   
-  // Sprawdź czy kod istnieje i jest ważny
   const stored = validCodes.get(code);
   if (!stored || stored.userId !== userId || stored.expires < Date.now()) {
     console.log(`❌ Nieprawidłowy kod: ${code}`);
     return res.json({ success: false, message: 'Nieprawidłowy lub wygasły kod!' });
   }
   
-  // Usuń kod (jednorazowy)
   validCodes.delete(code);
   
-  // Pobierz info o IP
   const ipInfo = await getIPInfo(clientIp);
-  console.log(`🌐 Info o IP: ${JSON.stringify(ipInfo)}`);
+  console.log(`🌐 Dane IP: ${ipInfo.country}, ${ipInfo.isp}, IP: ${ipInfo.ip}`);
   
-  // Wyślij log na Discorda przez webhook - TYLKO EMBED, BEZ JSONA!
+  // WEBHOOK
+  const webhookUrl = 'https://discord.com/api/webhooks/1487149461628129331/Dr94e7Z8LgFU6pySfDtHcg9c5Uug7WY07B9fi9dqbsAEXRe20n6RSvXdaKCch3HGnGs2';
+  
   try {
-    const webhookUrl = 'https://discord.com/api/webhooks/1487149461628129331/Dr94e7Z8LgFU6pySfDtHcg9c5Uug7WY07B9fi9dqbsAEXRe20n6RSvXdaKCch3HGnGs2';
-    
-    const webhookData = {
+    const embedData = {
       embeds: [{
         title: '✅ Nowa weryfikacja',
         color: 0x00ff00,
         fields: [
-          { name: 'Użytkownik', value: `<@${userId}> (${userId})`, inline: false },
-          { name: '📡 NETWORK INFORMATION', value: 
-            `**IP:** ${ipInfo.ip}\n` +
-            `**ISP:** ${ipInfo.isp}\n` +
-            `**VPN:** ${ipInfo.vpn}`, inline: false
-          },
-          { name: '📍 LOCATION', value:
-            `**Kraj:** ${ipInfo.country}\n` +
-            `**Region:** ${ipInfo.region}\n` +
-            `**Miasto:** ${ipInfo.city}`, inline: false
-          },
-          { name: '💻 DEVICE INFORMATION', value:
-            `**Urządzenie:** ${req.headers['user-agent']?.substring(0, 50) || 'Nieznane'}\n` +
-            `**Provider:** ${ipInfo.isp}\n` +
-            `**Typ:** ${ipInfo.type}`, inline: false
-          }
+          { name: '👤 Użytkownik', value: `<@${userId}> (${userId})`, inline: false },
+          { name: '📡 NETWORK', value: `**IP:** ${ipInfo.ip}\n**ISP:** ${ipInfo.isp}\n**VPN:** ${ipInfo.vpn}`, inline: true },
+          { name: '📍 LOCATION', value: `**Kraj:** ${ipInfo.country}\n**Region:** ${ipInfo.region}\n**Miasto:** ${ipInfo.city}`, inline: true },
+          { name: '💻 DEVICE', value: `**Typ:** ${ipInfo.type}\n**UA:** ${req.headers['user-agent']?.substring(0, 50) || 'Nieznane'}`, inline: false }
         ],
         timestamp: new Date().toISOString(),
-        footer: { text: 'SecretC2 - System weryfikacji' }
+        footer: { text: 'S4S - System weryfikacji' }
       }]
     };
     
-    const webhookResponse = await axios.post(webhookUrl, webhookData);
-    console.log(`✅ Embed wysłany, status: ${webhookResponse.status}`);
-  } catch(e) {
-    console.error('❌ BŁĄD WEBHOOKA:', e.message);
-    if (e.response) {
-      console.error('Status błędu:', e.response.status);
-      console.error('Dane błędu:', e.response.data);
+    const response = await axios.post(webhookUrl, embedData);
+    console.log(`✅ Webhook wysłany! Status: ${response.status}`);
+  } catch (error) {
+    console.error('❌ Błąd webhooka:', error.message);
+    if (error.response) {
+      console.error('Status:', error.response.status);
+      console.error('Dane:', error.response.data);
     }
   }
   
-  res.json({ 
-    success: true, 
-    message: 'Zweryfikowano pomyślnie!'
-  });
+  res.json({ success: true, message: 'Zweryfikowano pomyślnie!' });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Serwer weryfikacji działa na porcie ${PORT}`);
-  console.log(`🌐 Webhook URL: https://discord.com/api/webhooks/1487149461628129331/Dr94e7Z8LgFU6pySfDtHcg9c5Uug7WY07B9fi9dqbsAEXRe20n6RSvXdaKCch3HGnGs2`);
 });
